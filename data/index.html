@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Manual Control</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="navbar">
+    <a href="/index.html">Manual Control</a>
+    <a href="/pid.html">PID Tuning</a>
+  </div>
+
+  <div id="motors"></div>
+
+  <script>
+    function createMotorControls() {
+      const motorsDiv = document.getElementById("motors");
+      for (let i = 0; i < 6; i++) {
+        const motor = document.createElement("div");
+        motor.className = "motor";
+        motor.innerHTML = `
+          <h3>Motor ${i + 1}</h3>
+          <input type="range" min="0" max="255" id="slider_${i}">
+          <input type="number" min="0" max="255" id="manual_${i}">
+          <button onclick="sendManual(${i})">Set PWM</button>
+          <label>
+            <input type="checkbox" id="dir_${i}"> Reverse
+          </label>
+          <button onclick="startMotor(${i})">Start Motor</button>
+          <button onclick="stopMotor(${i})">Stop Motor</button>
+          <p>Encoder: <span id="enc_${i}">0</span></p>
+        `;
+        motorsDiv.appendChild(motor);
+      }
+    }
+
+    function sendPWM(id, value) {
+      fetch(`/motor/${id}/pwm?value=${value}`);
+    }
+
+    function sendManual(id) {
+      const val = document.getElementById(`manual_${id}`).value;
+      sendPWM(id, val);
+    }
+
+    function sendDirection(id) {
+      const isReverse = document.getElementById(`dir_${id}`).checked;
+      const dir = isReverse ? -1 : 1;
+      return dir;
+    }
+
+    function startMotor(id) {
+      const pwm = document.getElementById(`slider_${id}`).value;
+      const dir = sendDirection(id);
+      fetch(`/motor/${id}/pwm?value=${pwm}`);
+      fetch(`/motor/${id}/direction?value=${dir}`);
+    }
+
+    function stopMotor(id) {
+      fetch(`/motor/${id}/pwm?value=0`);
+    }
+
+    function updateEncoders() {
+      for (let i = 0; i < 6; i++) {
+        fetch(`/motor/${i}/encoder`)
+          .then(r => r.text())
+          .then(val => {
+            document.getElementById(`enc_${i}`).innerText = val;
+          });
+      }
+    }
+
+    createMotorControls();
+    setInterval(updateEncoders, 200);
+  </script>
+</body>
+</html>
