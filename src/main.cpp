@@ -1,65 +1,121 @@
-#include <Arduino.h>
+#include "main.h"
 
-// Motor DIR and EN pins (DIR1 / EN1 and DIR2 / EN2)
-const int motorDirPins[6] = {25, 32, 5, 16, 15, 0};   // DIR1 or DIR2
-const int motorEnPins[6]  = {26, 33, 18, 17, 2, 4};   // EN1 or EN2
+WebServer server(80);
+const char* ssid = "Darren’s iPhone";
+const char* password = "password";
 
-// Encoder A and B phase pins (Pin 5 & 6 from each connector J1–J6)
-// const int encoderAPins[6] = {39, 35, 19, 22, 14, 12}; // Encoder A
-// const int encoderBPins[6] = {36, 34, 21, 23, 27, 13}; // Encoder B
 
-// PWM configuration
-const int pwmFreq = 20000;       // 20 kHz
-const int pwmResolution = 8;     // 8-bit resolution (0-255)
-const int pwmDuty = 255;         // ~70% duty cycle
+Motor motor[6] = {
+  Motor(0, motorDirPins[0], motorEnPins[0], PCNT_UNIT_FROM_ID(0), encoderAPins[0], encoderBPins[0]),
+  Motor(1, motorDirPins[1], motorEnPins[1], PCNT_UNIT_FROM_ID(1), encoderAPins[1], encoderBPins[1]),
+  Motor(2, motorDirPins[2], motorEnPins[2], PCNT_UNIT_FROM_ID(2), encoderAPins[2], encoderBPins[2]),
+  Motor(3, motorDirPins[3], motorEnPins[3], PCNT_UNIT_FROM_ID(3), encoderAPins[3], encoderBPins[3]),
+  Motor(4, motorDirPins[4], motorEnPins[4], PCNT_UNIT_FROM_ID(4), encoderAPins[4], encoderBPins[4]),
+  Motor(5, motorDirPins[5], motorEnPins[5], PCNT_UNIT_FROM_ID(5), encoderAPins[5], encoderBPins[5])
+};
+
+void serveFile(String path, String type) {
+  File file = SPIFFS.open(path, "r");
+  if (!file) {
+    server.send(404, "text/plain", "File not found");
+    return;
+  }
+  server.streamFile(file, type);
+  file.close();
+}
+
+void setupRoutes() {
+  server.on("/", HTTP_GET, []() {
+    serveFile("/index.html", "text/html");
+  });
+
+  server.on("/style.css", HTTP_GET, []() {
+    serveFile("/style.css", "text/css");
+  });
+
+  server.on("/script.js", HTTP_GET, []() {
+    serveFile("/script.js", "application/javascript");
+  });
+
+  // Dynamic motor endpoints
+  server.onNotFound([]() {
+    String uri = server.uri();
+
+    // Match /motor/{id}/encoder
+    if (uri.startsWith("/motor/") && uri.endsWith("/encoder")) {
+      int id = uri.substring(7, uri.indexOf("/encoder")).toInt();
+      if (id >= 0 && id < 6) {
+        server.send(200, "text/plain", String(motor[id].readEncoder()));
+        return;
+      }
+    }
+
+    // Match /motor/{id}/pwm?value=X
+    if (uri.startsWith("/motor/") && uri.indexOf("/pwm") > 0) {
+      int id = uri.substring(7, uri.indexOf("/pwm")).toInt();
+      if (id >= 0 && id < 6 && server.hasArg("value")) {
+        int pwm = server.arg("value").toInt();
+        motor[id].driveRaw(pwm, 1); // direction set separately
+        server.send(200, "text/plain", "OK");
+        return;
+      }
+    }
+
+    // Match /motor/{id}/direction?value=X
+    if (uri.startsWith("/motor/") && uri.indexOf("/direction") > 0) {
+      int id = uri.substring(7, uri.indexOf("/direction")).toInt();
+      if (id >= 0 && id < 6 && server.hasArg("value")) {
+        int dir = server.arg("value").toInt();
+        motor[id].driveRaw(255, dir);  // Use last PWM or always full for now
+        server.send(200, "text/plain", "OK");
+        return;
+      }
+    }
+
+    // Match /motor/{id}/invert?value=X
+    if (uri.startsWith("/motor/") && uri.indexOf("/invert") > 0) {
+      int id = uri.substring(7, uri.indexOf("/invert")).toInt();
+      if (id >= 0 && id < 6 && server.hasArg("value")) {
+        int inv = server.arg("value").toInt();
+        motor[id].setInvertDirection(inv);
+        server.send(200, "text/plain", "OK");
+        return;
+      }
+    }
+
+    server.send(404, "text/plain", "Not found");
+  });
+}
 
 void setup() {
-  // for (int i = 0; i < 6; i++) {
-  //   pinMode(motorDirPins[i], OUTPUT);
-  //   // pinMode(encoderAPins[i], INPUT);
-  //   // pinMode(encoderBPins[i], INPUT);
+  Serial.begin(115200);
 
-  //   ledcSetup(i, pwmFreq, pwmResolution);
-  //   ledcAttachPin(motorEnPins[i], i);
-  // }
-
-  for(int i = 0; i < 6; i++){
-    pinMode(motorDirPins[i], OUTPUT);
-    pinMode(motorEnPins[i], OUTPUT);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
   }
+
+  Serial.println("\nConnected!");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS mount failed");
+    return;
+  }
+
+  for (int i = 0; i < 6; i++) {
+    motor[i].setupEncoder();
+  }
+
+  setupRoutes();
+  server.begin();
+  Serial.println("HTTP server started");
 }
 
 void loop() {
-  for(int i = 0; i < 6; i++){
-    digitalWrite(motorEnPins[i], HIGH);
-  }
-  delay(2000);
-  for(int i = 0; i < 6; i++){
-    digitalWrite(motorDirPins[i], HIGH);
-  }  
-  delay(2000);
-
-  for(int i = 0; i < 6; i++){
-    digitalWrite(motorDirPins[i], LOW);
-  }  
-  delay(2000);
-  // Clockwise (DIR = LOW)
-  // for (int i = 0; i < 6; i++) {
-  //   digitalWrite(motorDirPins[i], LOW);
-  //   ledcWrite(i, pwmDuty);
-  // }
-  // delay(2000);
-
-  // // Counterclockwise (DIR = HIGH)
-  // for (int i = 0; i < 6; i++) {
-  //   digitalWrite(motorDirPins[i], HIGH);
-  //   ledcWrite(i, pwmDuty);
-  // }
-  // delay(2000);
-
-  // // Stop all motors
-  // for (int i = 0; i < 6; i++) {
-  //   ledcWrite(i, 0);
-  // }
-  // delay(1000);
+  server.handleClient();
 }
+
