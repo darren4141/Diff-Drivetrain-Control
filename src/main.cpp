@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "driver/pcnt.h"
 #include "motor.cpp"
+#include "module.cpp"
 #include <ESPAsyncWebServer.h>
 #include <FS.h>
 #include <SPIFFS.h>
@@ -31,45 +32,8 @@ Motor motor[6] = {
   Motor(5, motorDirPins[5], motorEnPins[5], PCNT_UNIT_FROM_ID(5), encoderAPins[5], encoderBPins[5])
 };
 
-void onConnectedGamepad(GamepadPtr gp){
-  Serial.println("Gamepad Connected");
-  myGamepad = gp;
-}
-
-void onDisconnectedGamepad(GamepadPtr gp) {
-  Serial.println("Gamepad disconnected");
-  myGamepad = nullptr;
-}
-
-void dumpGamepad(GamepadPtr ctl) {
-  Serial.printf(
-    "idx=%d, dpad: 0x%02x, buttons: 0x%04x, axis L: %4d, %4d, axis R: %4d, %4d, "
-    "brake: %4d, throttle: %4d, misc: 0x%02x, gyro x:%6d y:%6d z:%6d, accel x:%6d y:%6d z:%6d\n",
-    ctl->index(),       // Controller Index
-    ctl->dpad(),        // D-pad bitmask
-    ctl->buttons(),     // Bitmask of pressed buttons
-    ctl->axisX(),       // (-511 to 512) left X Axis
-    ctl->axisY(),       // (-511 to 512) left Y Axis
-    ctl->axisRX(),      // (-511 to 512) right X Axis
-    ctl->axisRY(),      // (-511 to 512) right Y Axis
-    ctl->brake(),       // (0 to 1023) brake button
-    ctl->throttle(),    // (0 to 1023) throttle (gas) button
-    ctl->miscButtons(), // Bitmask of pressed "misc" buttons
-    ctl->gyroX(),       // Gyro X
-    ctl->gyroY(),       // Gyro Y
-    ctl->gyroZ(),       // Gyro Z
-    ctl->accelX(),      // Accelerometer X
-    ctl->accelY(),      // Accelerometer Y
-    ctl->accelZ()       // Accelerometer Z
-  );
-}
-
 void setup() {
   Serial.begin(115200);
-
-  for (int i = 0; i < 6; i++) {
-    motor[i].setupEncoder();
-  }
 
   // WiFi.begin(ssid, password);
   // while (WiFi.status() != WL_CONNECTED) {
@@ -169,6 +133,9 @@ void loop() {
   
   if (dataUpdated)
       processControllers();
+
+
+  
 
   delay(100);
 
