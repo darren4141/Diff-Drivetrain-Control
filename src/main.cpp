@@ -32,6 +32,12 @@ Motor motor[6] = {
   Motor(5, motorDirPins[5], motorEnPins[5], PCNT_UNIT_FROM_ID(5), encoderAPins[5], encoderBPins[5])
 };
 
+Module module[3] = {
+  Module(motor[0], motor[1]),
+  Module(motor[2], motor[3]),
+  Module(motor[4], motor[5]);
+}
+
 void setup() {
   Serial.begin(115200);
 
