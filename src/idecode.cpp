@@ -277,6 +277,12 @@ class Module {
       motor2.resetEncoder();
     }
 
+    void setAndUpdateAngle(float new_targetAngle){
+      setTargetAngle(new_targetAngle);
+      update();
+      updateAngle();
+    }
+
   private:
     Motor& motor1;
     Motor& motor2;
@@ -414,15 +420,30 @@ void processGamepad(ControllerPtr ctl) {
 
       float angle = atan2f(x, y) * 180.0f / M_PI;
 
-      module[0].setTargetAngle(angle);
-      module[1].setTargetAngle(angle);
-      module[2].setTargetAngle(angle);
-      module[0].update();
-      module[1].update();
-      module[2].update();
-      module[0].updateAngle();
-      module[1].updateAngle();
-      module[2].updateAngle();
+      module[0].setAndUpdateAngle(angle);
+      module[1].setAndUpdateAngle(angle);
+      module[2].setAndUpdateAngle(angle);
+
+      Serial.print("Stick angle: ");
+      Serial.print(angle);
+      Serial.print(" | M1 angle: ");
+      Serial.print(module[0].getAngle());
+      Serial.print(" | M2 angle: ");
+      Serial.print(module[1].getAngle());
+      Serial.print(" | M3 angle: ");
+      Serial.println(module[2].getAngle());
+
+    }else if(ctl->dpad() != 0){
+      int dpad = ctl->dpad();
+      int targetAngle =   dpad == 0x01 ? 0 :
+                          dpad == 0x02 ? 90 :
+                          dpad == 0x04 ? 180 :
+                          dpad == 0x08 ? -90 : -1;
+
+      module[0].setAndUpdateAngle(angle);
+      module[1].setAndUpdateAngle(angle);
+      module[2].setAndUpdateAngle(angle);
+
       Serial.print("Stick angle: ");
       Serial.print(angle);
       Serial.print(" | M1 angle: ");
