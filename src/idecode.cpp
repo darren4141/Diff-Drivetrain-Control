@@ -241,53 +241,7 @@ class Module {
         }
       }else{
         coast(255, 1);
-        // driveRaw(255, 1);
       }
-
-      // }else if (abs(currentAngle - targetAngle) > 20) {  //coast can work withing 20 degrees
-      //   if (prevState == 1) {
-      //     previousTime = micros();
-      //     eI = 0;
-      //     ePPrevious = 0;
-      //     prevState = 0;
-      //   }
-      //   long currentTime = micros();
-      //   float dT = ((float)(currentTime - previousTime)) / 1.0e6;
-      //   float eP = currentAngle - targetAngle;
-
-      //   eI = eI + (eP * dT);
-      //   float eD = (eP - ePPrevious) / dT;
-
-      //   previousTime = currentTime;
-      //   ePPrevious = eP;
-
-      //   float power = (5 * eP) + (0 * eI) + (0 * eD);
-      //   if(abs(power) > 255){
-      //     if(power > 0){
-      //       power = 255;
-      //     }else{
-      //       power = -255;
-      //     }
-      //   }
-
-      //   if(power > 0){
-      //     motor1.driveRaw(255, 1);
-      //     motor2.driveRaw(255 - abs(power), -1);
-      //   }else{
-      //     motor1.driveRaw(255 - abs(power), -1);
-      //     motor2.driveRaw(255, 1);
-      //   }
-
-      //   } else {
-      //       if (prevState == 0) {
-      //         previousTime = micros();
-      //         eI = 0;
-      //         ePPrevious = 0;
-      //         prevState = 1;
-      //       }
-      //       coast(255, 1);  //temporarily 6 but i need to make a lookup table
-      //     }
-      // }
 
     }
 
@@ -421,36 +375,26 @@ void processGamepad(ControllerPtr ctl) {
     // There are different ways to query whether a button is pressed.
     // By query each button individually:
     //  a(), b(), x(), y(), l1(), etc...
+
+    int steeringSpeed = 225;
     if(ctl->buttons() == 0x08 || ctl->buttons() == 0x04 || ctl->buttons() == 0x02){
       if(ctl->axisX() > 500){
         int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        // Serial.print("TURNING M");
-        // Serial.print(moduleID);
-        // Serial.println(" CW");
-        module[moduleID].turn(255, 1);
+        module[moduleID].turn(steeringSpeed, 1);
         module[moduleID].updateAngle();
         Serial.println(module[moduleID].getAngle());
       }else if(ctl->axisX() < -500){
         int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        // Serial.print("TURNING M");
-        // Serial.print(moduleID);
-        // Serial.println(" CCW");
-        module[moduleID].turn(255, -1);
+        module[moduleID].turn(steeringSpeed, -1);
         module[moduleID].updateAngle();
         Serial.println(module[moduleID].getAngle());
       }else if(ctl->axisY() > 500){
         int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        // Serial.print("TURNING M");
-        // Serial.print(moduleID);
-        // Serial.println(" CCW");
         module[moduleID].driveRaw(255, 1);
         module[moduleID].updateAngle();
         Serial.println(module[moduleID].getAngle());
       }else if(ctl->axisY() < -500){
         int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        // Serial.print("TURNING M");
-        // Serial.print(moduleID);
-        // Serial.println(" CCW");
         module[moduleID].driveRaw(255, -1);
         module[moduleID].updateAngle();
         Serial.println(module[moduleID].getAngle());
@@ -467,18 +411,6 @@ void processGamepad(ControllerPtr ctl) {
     }else if(abs(ctl->axisY()) > 50 && abs(ctl->axisX()) > 50){
       int x = -1 * ctl->axisX();
       int y = -1 * ctl->axisY();
-
-      // if(y > 400){
-      //   module[0].setTargetAngle(0);
-      //   module[0].coast(255, 1);
-      //   module[0].updateAngle();
-      //   // Serial.println(module[0].getAngle());
-      // }else if(y < -400){
-      //   module[0].setTargetAngle(0);
-      //   module[0].coast(255, -1);
-      //   module[0].updateAngle();
-      //   // Serial.println(module[0].getAngle());
-      // }
 
       float angle = atan2f(x, y) * 180.0f / M_PI;
 
@@ -499,18 +431,6 @@ void processGamepad(ControllerPtr ctl) {
       Serial.print(module[1].getAngle());
       Serial.print(" | M3 angle: ");
       Serial.println(module[2].getAngle());
-
-
-      // Serial.print(angle);
-      // Serial.print(" | ");
-
-      // for(int i = 0; i < 3; i++){
-      //   module[i].setTargetAngle(angle);
-      // }
-
-      // for(int i = 0; i < 3; i++){
-      //   module[i].update();
-      // }
 
     }else{
       for(int i = 0; i < 3; i++){
