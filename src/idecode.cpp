@@ -62,8 +62,13 @@ class Motor{
     pcntConfig.unit             = pcntUnit;
 
     //increment in rising edge, decrement on falling edge
-    pcntConfig.pos_mode         = PCNT_COUNT_INC;
-    pcntConfig.neg_mode         = PCNT_COUNT_DEC;
+    if(encoderInvertDirection == 1){
+      pcntConfig.pos_mode         = PCNT_COUNT_DEC;
+      pcntConfig.neg_mode         = PCNT_COUNT_INC;     
+    }else if(encoderInvertDirection == -1){
+      pcntConfig.pos_mode         = PCNT_COUNT_INC;
+      pcntConfig.neg_mode         = PCNT_COUNT_DEC;     
+    }
 
     //if control signal is low, reverse counting direction
     pcntConfig.lctrl_mode       = PCNT_MODE_REVERSE;
@@ -115,6 +120,10 @@ class Motor{
     invertDirection = new_invertDirection;
   }
 
+  void setEncoderInvertDirection(int new_encoderInvertDirection){
+    encoderInvertDirection = new_encoderInvertDirection;
+  }
+
 
   private:
     pcnt_unit_t pcntUnit;
@@ -122,6 +131,7 @@ class Motor{
     gpio_num_t gpioB;
     float PIDconstants[3] = {};
     int invertDirection;
+    int encoderInvertDirection;
     int prevEncoderCount = 0;
     long previousTime = 0;
     float speedPrevious = 0;
@@ -140,14 +150,18 @@ class Module {
     Module(Motor &new_motor1, Motor &new_motor2):
         motor1(new_motor1),
         motor2(new_motor2)
-    {
-        motor1.setupEncoder();
-        motor2.setupEncoder();
+    {}
+
+    void setupEncoders(){
+      motor1.setupEncoder();
+      motor2.setupEncoder();
     }
 
-    void configInversions(int motor1Invert, int motor2Invert){
+    void configInversions(int motor1Invert, int motor2Invert, int motor1EncoderInvert, int motor2EncoderInvert){
         motor1.setInvertDirection(motor1Invert);
         motor2.setInvertDirection(motor2Invert);
+        motor1.setEncoderInvertDirection(motor1EncoderInvert);
+        motor2.setEncoderInvertDirection(motor2EncoderInvert);
     }
 
     void driveRaw(int power, int direction){
@@ -189,34 +203,17 @@ class Module {
         turn(power, 1);
     }
 
-    int getEncoderOffset() {
-        return (motor2.getEncoderCount()) + (motor1.getEncoderCount());
-    }
-
-    float getAngle() {
-        return (float)(((motor1.getEncoderCount() + motor2.getEncoderCount()) % 25000) * 0.0144);  // 0.0144 is equivalent to * 360 / 25000
+    void displayEncoderReadings(){
+      Serial.print(motor1.getEncoderCount());
+      Serial.print(" | ");
+      Serial.print(motor2.getEncoderCount());
+      Serial.print(" | ");
+      Serial.println(motor1.getEncoderCount() - motor2.getEncoderCount());
     }
 
     void update() {
-        float currentAngle = getAngle();
+        
 
-        if (abs(currentAngle - targetAngle) > 2) {  //2 degree tolerance
-        if (prevState == 1) {
-            previousTime = micros();
-            eI = 0;
-            ePPrevious = 0;
-            prevState = 0;
-        }
-        turnToAngle(targetAngle);
-        } else {
-            if (prevState == 0) {
-                previousTime = micros();
-                eI = 0;
-                ePPrevious = 0;
-                prevState = 1;
-            }
-            driveRaw(targetPower, 1);  //temporarily 6 but i need to make a lookup table
-        }
     }
 
     void setTargetPower(float new_targetPower) {
@@ -231,9 +228,30 @@ class Module {
         return targetAngle;
     }
 
+    void resetAngle(){
+      currentAngle = 0;
+    }
+
+    float getAngle(){
+      return currentAngle;
+    }
+    
+    void updateAngle(){
+      currentAngle += (motor1.getEncoderCount() - motor2.getEncoderCount()) * 360 / 7550;
+      while(currentAngle > 360){
+        currentAngle -= 360;
+      }
+      while(currentAngle < 0){
+        currentAngle += 360;
+      }
+      motor1.resetEncoder();
+      motor2.resetEncoder();
+    }
+
   private:
     Motor& motor1;
     Motor& motor2;
+    float currentAngle;
     float PIDconstants[6] = {};
     float previousTime = 0;
     float eI = 0;
@@ -325,35 +343,48 @@ void processGamepad(ControllerPtr ctl) {
     // By query each button individually:
     //  a(), b(), x(), y(), l1(), etc...
     if(ctl->buttons() == 0x08 || ctl->buttons() == 0x04 || ctl->buttons() == 0x02){
-      if(ctl->axisX() < -500){
+      if(ctl->axisX() > 500){
         int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        Serial.print("TURNING M");
-        Serial.print(moduleID);
-        Serial.println(" CW");
+        // Serial.print("TURNING M");
+        // Serial.print(moduleID);
+        // Serial.println(" CW");
         module[moduleID].turn(255, 1);
-      }else if(ctl->axisX() > 500){
+        module[moduleID].updateAngle();
+        Serial.println(module[moduleID].getAngle());
+      }else if(ctl->axisX() < -500){
         int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        Serial.print("TURNING M");
-        Serial.print(moduleID);
-        Serial.println(" CCW");
+        // Serial.print("TURNING M");
+        // Serial.print(moduleID);
+        // Serial.println(" CCW");
         module[moduleID].turn(255, -1);
-      }else if(ctl->axisY() < -500){
-        int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        Serial.print("TURNING M");
-        Serial.print(moduleID);
-        Serial.println(" CCW");
-        module[moduleID].driveRaw(255, 1);
+        module[moduleID].updateAngle();
+        Serial.println(module[moduleID].getAngle());
       }else if(ctl->axisY() > 500){
         int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        Serial.print("TURNING M");
-        Serial.print(moduleID);
-        Serial.println(" CCW");
+        // Serial.print("TURNING M");
+        // Serial.print(moduleID);
+        // Serial.println(" CCW");
+        module[moduleID].driveRaw(255, 1);
+        module[moduleID].updateAngle();
+        Serial.println(module[moduleID].getAngle());
+      }else if(ctl->axisY() < -500){
+        int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
+        // Serial.print("TURNING M");
+        // Serial.print(moduleID);
+        // Serial.println(" CCW");
         module[moduleID].driveRaw(255, -1);
+        module[moduleID].updateAngle();
+        Serial.println(module[moduleID].getAngle());
       }else{
         for(int i = 0; i < 3; i++){
           module[i].stop();
         }
       }
+    }else if(ctl->buttons() == 0x01){
+      module[0].resetAngle();
+      module[1].resetAngle();
+      module[2].resetAngle();
+      Serial.println("Reset angles!");
     }else if(ctl->axisY() > 500){
       for(int i = 0; i < 3; i++){
           module[i].driveRaw(255, 1);
@@ -370,7 +401,7 @@ void processGamepad(ControllerPtr ctl) {
 
     // Another way to query controller data is by getting the buttons() function.
     // See how the different "dump*" functions dump the Controller info.
-    dumpGamepad(ctl);
+    // dumpGamepad(ctl);
 }
 
 void processControllers() {
@@ -387,9 +418,13 @@ void processControllers() {
 
 // Arduino setup function. Runs in CPU 1
 void setup() {
-    module[0].configInversions(1, -1);
-    module[1].configInversions(1, -1);
-    module[2].configInversions(1, 1);
+    module[0].configInversions(1, -1, -1, 1);
+    module[1].configInversions(1, -1, -1, 1);
+    module[2].configInversions(1, 1, -1, 1);
+
+    for(int i = 0; i < 3; i++){
+      module[i].setupEncoders();
+    }
 
     Serial.begin(115200);
     Serial.printf("Firmware: %s\n", BP32.firmwareVersion());
