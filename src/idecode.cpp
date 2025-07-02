@@ -181,7 +181,7 @@ class Module {
         }
       }
 
-      if(abs(eP) < 3){
+      if(abs(eP) < 2){
         coasteI = 0;
       }
 
@@ -196,13 +196,13 @@ class Module {
         motor2.driveRaw(power - abs((eP * coastKP) + (coasteI * coastKI)), -1 * direction);
       }
 
-      Serial.print(currentAngle);
-      Serial.print(" | eP: ");
-      Serial.print(eP);
-      Serial.print(" | eI: ");
-      Serial.print(coasteI);
-      Serial.print(" | power: ");
-      Serial.println((eP * coastKP) + (coasteI * coastKI));
+      // Serial.print(currentAngle);
+      // Serial.print(" | eP: ");
+      // Serial.print(eP);
+      // Serial.print(" | eI: ");
+      // Serial.print(coasteI);
+      // Serial.print(" | power: ");
+      // Serial.println((eP * coastKP) + (coasteI * coastKI));
 
     }
     
@@ -232,15 +232,16 @@ class Module {
     }
 
     void update() {
-      if(abs(currentAngle - targetAngle) > 30){
-        if(currentAngle > targetAngle){
+      float eP = currentAngle - targetAngle;
+      if(abs(eP) > 15){
+        if(eP > 0){
           turn(255, 1);
         }else{
           turn(255, -1);
         }
-
       }else{
         coast(255, 1);
+        // driveRaw(255, 1);
       }
 
       // }else if (abs(currentAngle - targetAngle) > 20) {  //coast can work withing 20 degrees
@@ -326,7 +327,7 @@ class Module {
     Motor& motor1;
     Motor& motor2;
     float coastKP = 3;
-    float coastKI = 0.2;
+    float coastKI = 0.15;
     float coasteI = 0;
     float currentAngle;
     float PIDconstants[3] = {};
@@ -481,15 +482,23 @@ void processGamepad(ControllerPtr ctl) {
 
       float angle = atan2f(x, y) * 180.0f / M_PI;
 
-      // module[0].setTargetAngle(angle);
+      module[0].setTargetAngle(angle);
       module[1].setTargetAngle(angle);
-      // module[2].setTargetAngle(angle);
-      // module[0].update();
+      module[2].setTargetAngle(angle);
+      module[0].update();
       module[1].update();
-      // module[2].update();
-      // module[0].updateAngle();
+      module[2].update();
+      module[0].updateAngle();
       module[1].updateAngle();
-      // module[2].updateAngle();
+      module[2].updateAngle();
+      Serial.print("Stick angle: ");
+      Serial.print(angle);
+      Serial.print(" | M1 angle: ");
+      Serial.print(module[0].getAngle());
+      Serial.print(" | M2 angle: ");
+      Serial.print(module[1].getAngle());
+      Serial.print(" | M3 angle: ");
+      Serial.println(module[2].getAngle());
 
 
       // Serial.print(angle);
