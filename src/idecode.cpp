@@ -168,6 +168,43 @@ class Module {
         motor1.driveRaw(power, direction);
         motor2.driveRaw(power, -1 * direction);
     }
+
+    void coast(int power, int direction){
+      float eP = currentAngle - targetAngle;
+      coasteI += eP;
+
+      if(abs(coasteI) > 200){
+        if(coasteI > 0){
+          coasteI = 200;
+        }else{
+          coasteI = -200;
+        }
+      }
+
+      if(abs(eP) < 3){
+        coasteI = 0;
+      }
+
+      if(eP < 1 && eP > -1){
+        motor1.driveRaw(power, direction);
+        motor2.driveRaw(power, -1 * direction);
+      }else if(eP < 0){
+        motor1.driveRaw(power - abs((eP * coastKP) + (coasteI * coastKI)), direction);
+        motor2.driveRaw(power, -1 * direction);
+      }else if(eP > 0){
+        motor1.driveRaw(power, direction);
+        motor2.driveRaw(power - abs((eP * coastKP) + (coasteI * coastKI)), -1 * direction);
+      }
+
+      Serial.print(currentAngle);
+      Serial.print(" | eP: ");
+      Serial.print(eP);
+      Serial.print(" | eI: ");
+      Serial.print(coasteI);
+      Serial.print(" | power: ");
+      Serial.println((eP * coastKP) + (coasteI * coastKI));
+
+    }
     
     void turn(int power, int direction){
         motor1.driveRaw(power, direction);
@@ -179,28 +216,11 @@ class Module {
       motor2.stop();
     }
 
-    void turnToAngle(float targetAngle) {
-        long currentTime = micros();
-        float dT = ((float)(currentTime - previousTime)) / 1.0e6;
-
-        float eP = targetAngle - getAngle();
-        eI = eI + (eP * dT);
-        float eD = (eP - ePPrevious) / dT;
-
-        int power = (int)((eP * PIDconstants[0]) + (eI * PIDconstants[1]) + (eD * PIDconstants[2]));
-
-        if (abs(power) > 255) {
-        if (power < 0) {
-            power = -255;
-        } else {
-            power = 255;
-        }
-        }
-
-        // Serial.print(power);
-        // Serial.print(" | ");
-
-        turn(power, 1);
+    void setTurningPIDconstants(float kP, float kI, float kD, float new_eIBound){
+      PIDconstants[0] = kP;
+      PIDconstants[1] = kI;
+      PIDconstants[2] = kD;
+      eIBound = new_eIBound;
     }
 
     void displayEncoderReadings(){
@@ -212,7 +232,61 @@ class Module {
     }
 
     void update() {
-        
+      if(abs(currentAngle - targetAngle) > 30){
+        if(currentAngle > targetAngle){
+          turn(255, 1);
+        }else{
+          turn(255, -1);
+        }
+
+      }else{
+        coast(255, 1);
+      }
+
+      // }else if (abs(currentAngle - targetAngle) > 20) {  //coast can work withing 20 degrees
+      //   if (prevState == 1) {
+      //     previousTime = micros();
+      //     eI = 0;
+      //     ePPrevious = 0;
+      //     prevState = 0;
+      //   }
+      //   long currentTime = micros();
+      //   float dT = ((float)(currentTime - previousTime)) / 1.0e6;
+      //   float eP = currentAngle - targetAngle;
+
+      //   eI = eI + (eP * dT);
+      //   float eD = (eP - ePPrevious) / dT;
+
+      //   previousTime = currentTime;
+      //   ePPrevious = eP;
+
+      //   float power = (5 * eP) + (0 * eI) + (0 * eD);
+      //   if(abs(power) > 255){
+      //     if(power > 0){
+      //       power = 255;
+      //     }else{
+      //       power = -255;
+      //     }
+      //   }
+
+      //   if(power > 0){
+      //     motor1.driveRaw(255, 1);
+      //     motor2.driveRaw(255 - abs(power), -1);
+      //   }else{
+      //     motor1.driveRaw(255 - abs(power), -1);
+      //     motor2.driveRaw(255, 1);
+      //   }
+
+      //   } else {
+      //       if (prevState == 0) {
+      //         previousTime = micros();
+      //         eI = 0;
+      //         ePPrevious = 0;
+      //         prevState = 1;
+      //       }
+      //       coast(255, 1);  //temporarily 6 but i need to make a lookup table
+      //     }
+      // }
 
     }
 
@@ -238,10 +312,10 @@ class Module {
     
     void updateAngle(){
       currentAngle += (motor1.getEncoderCount() - motor2.getEncoderCount()) * 360 / 7550;
-      while(currentAngle > 360){
+      while(currentAngle > 180){
         currentAngle -= 360;
       }
-      while(currentAngle < 0){
+      while(currentAngle < -180){
         currentAngle += 360;
       }
       motor1.resetEncoder();
@@ -251,10 +325,14 @@ class Module {
   private:
     Motor& motor1;
     Motor& motor2;
+    float coastKP = 3;
+    float coastKI = 0.2;
+    float coasteI = 0;
     float currentAngle;
-    float PIDconstants[6] = {};
+    float PIDconstants[3] = {};
     float previousTime = 0;
     float eI = 0;
+    float eIBound;
     float ePPrevious = 0;
     float targetAngle = 0;
     float targetPower = 0;
@@ -385,14 +463,46 @@ void processGamepad(ControllerPtr ctl) {
       module[1].resetAngle();
       module[2].resetAngle();
       Serial.println("Reset angles!");
-    }else if(ctl->axisY() > 500){
-      for(int i = 0; i < 3; i++){
-          module[i].driveRaw(255, 1);
-      }
-    }else if(ctl->axisY() < -500){
-      for(int i = 0; i < 3; i++){
-          module[i].driveRaw(255, -1);
-      }
+    }else if(abs(ctl->axisY()) > 50 && abs(ctl->axisX()) > 50){
+      int x = -1 * ctl->axisX();
+      int y = -1 * ctl->axisY();
+
+      // if(y > 400){
+      //   module[0].setTargetAngle(0);
+      //   module[0].coast(255, 1);
+      //   module[0].updateAngle();
+      //   // Serial.println(module[0].getAngle());
+      // }else if(y < -400){
+      //   module[0].setTargetAngle(0);
+      //   module[0].coast(255, -1);
+      //   module[0].updateAngle();
+      //   // Serial.println(module[0].getAngle());
+      // }
+
+      float angle = atan2f(x, y) * 180.0f / M_PI;
+
+      // module[0].setTargetAngle(angle);
+      module[1].setTargetAngle(angle);
+      // module[2].setTargetAngle(angle);
+      // module[0].update();
+      module[1].update();
+      // module[2].update();
+      // module[0].updateAngle();
+      module[1].updateAngle();
+      // module[2].updateAngle();
+
+
+      // Serial.print(angle);
+      // Serial.print(" | ");
+
+      // for(int i = 0; i < 3; i++){
+      //   module[i].setTargetAngle(angle);
+      // }
+
+      // for(int i = 0; i < 3; i++){
+      //   module[i].update();
+      // }
+
     }else{
       for(int i = 0; i < 3; i++){
         module[i].stop();
