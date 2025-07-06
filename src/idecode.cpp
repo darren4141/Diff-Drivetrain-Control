@@ -3,11 +3,19 @@
 
 #define PCNT_UNIT_FROM_ID(ID) PCNT_UNIT_##ID
 
-#define BUTTON_PRESS_TO_MODULE_ID(x) \
-    ((x) == 0x04 ? 0 : \
-    (x) == 0x08 ? 1 : \
-    (x) == 0x02 ? 2 : \
+#define BUTTON_PRESS_TO_MODULE_ID(x)  \
+    ((x) == 0x04 ? 0 :  \
+    (x) == 0x08 ? 1 :   \
+    (x) == 0x02 ? 2 :   \
     -1)
+
+#define DPAD_TO_PWM_TEST_VALUE_INC(x) \
+  ((x) == 0x00 ? 0 :  \
+  (x) == 0x01 ? 1 :   \
+  (x) == 0x04 ? -1 :  \
+  (x) == 0x02 ? 5 :   \
+  (x) == 0x08 ? -5 :  \
+  0)
 
 ControllerPtr myControllers[BP32_MAX_GAMEPADS];
 
@@ -383,7 +391,28 @@ void processGamepad(ControllerPtr ctl) {
     //  a(), b(), x(), y(), l1(), etc...
 
     int steeringSpeed = 225;
-    if(ctl->buttons() == 0x08 || ctl->buttons() == 0x04 || ctl->buttons() == 0x02){
+    int PWMtestingSpeed = 100;
+    int prevDpadResult = 0;
+    if(abs(ctl->axisY()) > 50 && abs(ctl->axisX()) > 50){
+      int x = -1 * ctl->axisX();
+      int y = -1 * ctl->axisY();
+
+      float angle = atan2f(x, y) * 180.0f / M_PI;
+
+      module[0].setAndUpdateAngle(angle);
+      module[1].setAndUpdateAngle(angle);
+      module[2].setAndUpdateAngle(angle);
+
+      Serial.print("Stick angle: ");
+      Serial.print(angle);
+      Serial.print(" | M1 angle: ");
+      Serial.print(module[0].getAngle());
+      Serial.print(" | M2 angle: ");
+      Serial.print(module[1].getAngle());
+      Serial.print(" | M3 angle: ");
+      Serial.println(module[2].getAngle());
+
+    }else if(ctl->buttons() == 0x08 || ctl->buttons() == 0x04 || ctl->buttons() == 0x02){
       if(ctl->axisX() > 500){
         int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
         module[moduleID].turn(steeringSpeed, 1);
@@ -414,25 +443,17 @@ void processGamepad(ControllerPtr ctl) {
       module[1].resetAngle();
       module[2].resetAngle();
       Serial.println("Reset angles!");
-    }else if(abs(ctl->axisY()) > 50 && abs(ctl->axisX()) > 50){
-      int x = -1 * ctl->axisX();
-      int y = -1 * ctl->axisY();
-
-      float angle = atan2f(x, y) * 180.0f / M_PI;
-
-      module[0].setAndUpdateAngle(angle);
-      module[1].setAndUpdateAngle(angle);
-      module[2].setAndUpdateAngle(angle);
-
-      Serial.print("Stick angle: ");
-      Serial.print(angle);
-      Serial.print(" | M1 angle: ");
-      Serial.print(module[0].getAngle());
-      Serial.print(" | M2 angle: ");
-      Serial.print(module[1].getAngle());
-      Serial.print(" | M3 angle: ");
-      Serial.println(module[2].getAngle());
-
+    }else if(ctl->buttons() == 0x10){
+      int dpadResult = ctl->dpad();
+      if(prevDpadResult != dpadResult){
+        PWMtestingSpeed += DPAD_TO_PWM_TEST_VALUE_INC(dpadResult);
+      }
+      prevDpadResult = dpadResult;
+      
+    }else if(ctl->buttons() == 0x20){
+      module[0].turn(PWMtestingSpeed);
+      module[1].turn(PWMtestingSpeed);
+      module[2].turn(PWMtestingSpeed);
     }else if(ctl->dpad() != 0){
       int dpad = ctl->dpad();
       int targetAngle =   dpad == 0x01 ? 0 :
