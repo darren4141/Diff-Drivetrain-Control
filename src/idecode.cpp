@@ -440,12 +440,12 @@ void processGamepad(ControllerPtr ctl) {
                           dpad == 0x04 ? 180 :
                           dpad == 0x08 ? -90 : -1;
 
-      module[0].setAndUpdateAngle(angle);
-      module[1].setAndUpdateAngle(angle);
-      module[2].setAndUpdateAngle(angle);
+      module[0].setAndUpdateAngle(targetAngle);
+      module[1].setAndUpdateAngle(targetAngle);
+      module[2].setAndUpdateAngle(targetAngle);
 
       Serial.print("Stick angle: ");
-      Serial.print(angle);
+      Serial.print(targetAngle);
       Serial.print(" | M1 angle: ");
       Serial.print(module[0].getAngle());
       Serial.print(" | M2 angle: ");
