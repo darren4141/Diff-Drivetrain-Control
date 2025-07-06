@@ -50,7 +50,6 @@ class Motor{
     gpioB(static_cast<gpio_num_t>(encPinB))
     {
       encoderCount = 0;
-      prevEncoderCount = 0;
       invertDirection = 1;
 
       pinMode(dirPin, OUTPUT);
@@ -132,6 +131,24 @@ class Motor{
     encoderInvertDirection = new_encoderInvertDirection;
   }
 
+  void updateSpeed(){
+    float currentTime = micros();
+    uint16_t encoderCount = getEncoderCount();
+    if(encoderCount - prevEncoderCount != 0){
+      if(currentTime - prevTime < 200000){ //if dt is too large dont update speed
+        speed = (encoderCount - prevEncoderCount) / (currentTime - prevTime);
+      }
+      //update prev values only if current - previous is not 0
+      prevTime = currentTime;
+      prevEncoderCount = encoderCount;
+    }
+
+  }
+
+  float getSpeed(){
+    return speed;
+  }
+
 
   private:
     pcnt_unit_t pcntUnit;
@@ -140,17 +157,14 @@ class Motor{
     float PIDconstants[3] = {};
     int invertDirection;
     int encoderInvertDirection;
+    float speed = 0;
     int prevEncoderCount = 0;
-    long previousTime = 0;
-    float speedPrevious = 0;
-    float ePPrevious = 0;
-    float eI;
-    float previousPower;
+    float prevTime = 0;
+
 
 };
 
 //-----------------------------------------Module Class------------------------------------------
-
 
 class Module {
   public: 
@@ -283,6 +297,11 @@ class Module {
       }
       motor1.resetEncoder();
       motor2.resetEncoder();
+    }
+
+    voidUpdateSpeed(){
+      motor1.updateSpeed();
+      motor2.updateSpeed();
     }
 
     void setAndUpdateAngle(float new_targetAngle){
@@ -445,7 +464,7 @@ void processGamepad(ControllerPtr ctl) {
       Serial.println("Reset angles!");
     }else if(ctl->buttons() == 0x10){
       int dpadResult = ctl->dpad();
-      if(prevDpadResult != dpadResult){
+      if(prevDpadResult != dpadResult && dpadResult != 0){
         PWMtestingSpeed += DPAD_TO_PWM_TEST_VALUE_INC(dpadResult);
       }
       prevDpadResult = dpadResult;
