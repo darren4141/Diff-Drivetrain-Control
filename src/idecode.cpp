@@ -9,12 +9,24 @@
     (x) == 0x02 ? 2 :   \
     -1)
 
+#define MODULE_ID_TO_PWM1(x)  \
+    ((x) == 0 ? 220 :  \
+    (x) == 1 ? 220 :   \
+    (x) == 2 ? 200 :   \
+    -1)
+
+#define MODULE_ID_TO_PWM2(x)  \
+    ((x) == 0 ? 180 :  \
+    (x) == 1 ? 180 :   \
+    (x) == 2 ? 160 :   \
+    -1)
+
 #define DPAD_TO_PWM_TEST_VALUE_INC(x) \
   ((x) == 0x00 ? 0 :  \
-  (x) == 0x01 ? 1 :   \
-  (x) == 0x04 ? -1 :  \
-  (x) == 0x02 ? 5 :   \
-  (x) == 0x08 ? -5 :  \
+  (x) == 0x01 ? 5 :   \ 
+  (x) == 0x04 ? 1 :   \ 
+  (x) == 0x02 ? -5 :  \ 
+  (x) == 0x08 ? -1 :  \ 
   0)
 
 ControllerPtr myControllers[BP32_MAX_GAMEPADS];
@@ -33,6 +45,10 @@ const int encoderBPins[6] = {36, 34, 21, 23, 27, 13}; // Encoder B
 const int pwmFreq = 20000;       // 20 kHz
 const int pwmResolution = 8;     // 8-bit resolution (0-255)
 const int pwmDuty = 255;         // ~70% duty cycle
+int PWMtestingSpeed = 100;
+int prevDpadResult = 0;
+
+int moduleAtTarget[3] = {0, 0, 0};
 
 class Motor{
   public:
@@ -119,6 +135,55 @@ class Motor{
     ledcWrite(motorID, speed);
   }
 
+  void setSpeed(float targetSpeed){
+    if(targetSpeed == 0){
+      stop();
+      return;
+    }
+
+    long currentTime = micros();
+    float dT = ((float)(currentTime - prevTime)) / 1.0e6;
+    
+    uint16_t encoderCount = getEncoderCount();
+
+    if(encoderCount - prevEncoderCount != 0){
+      if(currentTime - prevTime < 200000){ //if dt is too large dont update speed
+        speed = (encoderCount - prevEncoderCount) / (dT);
+      }
+      //update prev values only if current - previous is not 0
+      prevTime = currentTime;
+      prevEncoderCount = encoderCount;
+      prevSpeed = speed;
+    }
+
+    float eP = targetSpeed - speed;
+    eI = eI + (eP * dT);
+
+    if(abs(eI) > 100){
+      if(eI > 0){
+        eI = 100;
+      }else{
+        eI = -100;
+      }
+    }
+
+    float power;
+
+    power = (0.03 * eP) + (0.001 * eI);
+    previousPower += power;
+    
+    if(previousPower > 0){
+      driveRaw(abs(previousPower), 1);
+    }else{
+      driveRaw(abs(previousPower), -1);
+    }
+
+    Serial.print("SPEED: ");
+    Serial.print(speed);
+    Serial.print(" | POWER: ");
+    Serial.println(previousPower);
+  }
+
   void stop(){
     ledcWrite(motorID, 0);
   }
@@ -134,9 +199,13 @@ class Motor{
   void updateSpeed(){
     float currentTime = micros();
     uint16_t encoderCount = getEncoderCount();
+    // Serial.print("Recording: dC: ");
+    // Serial.print(encoderCount - prevEncoderCount);
+    // Serial.print(" | dT: ");
+    // Serial.println(currentTime - prevTime);
     if(encoderCount - prevEncoderCount != 0){
       if(currentTime - prevTime < 200000){ //if dt is too large dont update speed
-        speed = (encoderCount - prevEncoderCount) / (currentTime - prevTime);
+        speed = (encoderCount - prevEncoderCount) * 100000 / (currentTime - prevTime);
       }
       //update prev values only if current - previous is not 0
       prevTime = currentTime;
@@ -159,7 +228,10 @@ class Motor{
     int encoderInvertDirection;
     float speed = 0;
     int prevEncoderCount = 0;
+    float eI = 0;
     float prevTime = 0;
+    float prevSpeed = 0;
+    float previousPower = 220;
 
 
 };
@@ -169,9 +241,10 @@ class Motor{
 class Module {
   public: 
 
-    Module(Motor &new_motor1, Motor &new_motor2):
+    Module(Motor &new_motor1, Motor &new_motor2, int new_moduleID):
         motor1(new_motor1),
-        motor2(new_motor2)
+        motor2(new_motor2),
+        moduleID(new_moduleID)
     {}
 
     void setupEncoders(){
@@ -227,6 +300,11 @@ class Module {
       // Serial.println((eP * coastKP) + (coasteI * coastKI));
 
     }
+
+    void setSpeed(float targetSpeed){
+      motor1.setSpeed(targetSpeed);
+      motor2.setSpeed(targetSpeed);
+    }
     
     void turn(int power, int direction){
         motor1.driveRaw(power, direction);
@@ -236,6 +314,13 @@ class Module {
     void stop(){
       motor1.stop();
       motor2.stop();
+    }
+
+    void displayMotorSpeed(){
+      Serial.print(" M1: ");
+      Serial.print(motor1.getSpeed());
+      Serial.print(" M2: ");
+      Serial.print(motor2.getSpeed());
     }
 
     void setTurningPIDconstants(float kP, float kI, float kD, float new_eIBound){
@@ -255,14 +340,58 @@ class Module {
 
     void update() {
       float eP = currentAngle - targetAngle;
-      if(abs(eP) > 15){
+      eI = eI + eP;
+
+      if(abs(eP) > 10){
+        if(abs(eI) > 100){
+          if(eI > 0){
+            eI = 100;
+          }else{
+            eI = -100;
+          }
+        }
+
+        if(abs(eP) < 6){
+          eI = 0;
+        }
+        moduleAtTarget[moduleID] = 0;
+        int PWMfreq;
+
+        // if(abs(eP) < 15){
+        //   PWMfreq = MODULE_ID_TO_PWM2(moduleID);
+        // }else if(abs(eP) < 25){
+        //   PWMfreq = MODULE_ID_TO_PWM1(moduleID);
+        // }else{
+        //   PWMfreq = 255;
+        // }
+
+        PWMfreq = 160 + abs(eP * 2);
+
+        //floor: 160, 2
+        //suspended: 150, 1.5
+        
+        if(PWMfreq > 255){
+          PWMfreq = 255;
+        }
+
+        Serial.print("eP: ");
+        Serial.print(eP * 3);
+        Serial.print(" | eI: ");
+        Serial.print(eI * 0.1);
+        Serial.print(" | ");
+        Serial.println(PWMfreq);
+
         if(eP > 0){
-          turn(255, 1);
+          turn(PWMfreq, 1);
         }else{
-          turn(255, -1);
+          turn(PWMfreq, -1);
         }
       }else{
-        coast(255, 1);
+        moduleAtTarget[moduleID] = 1;
+
+        if((moduleAtTarget[0] == 1) && (moduleAtTarget[1] == 1) && (moduleAtTarget[2] == 1)){
+          coast(255, 1);
+        }
       }
 
     }
@@ -288,7 +417,7 @@ class Module {
     }
     
     void updateAngle(){
-      currentAngle += (motor1.getEncoderCount() - motor2.getEncoderCount()) * 360 / 7550;
+      currentAngle += (float)((motor1.getEncoderCount() - motor2.getEncoderCount()) * 360 / 7550);
       while(currentAngle > 180){
         currentAngle -= 360;
       }
@@ -299,7 +428,7 @@ class Module {
       motor2.resetEncoder();
     }
 
-    voidUpdateSpeed(){
+    void UpdateSpeed(){
       motor1.updateSpeed();
       motor2.updateSpeed();
     }
@@ -313,7 +442,8 @@ class Module {
   private:
     Motor& motor1;
     Motor& motor2;
-    float coastKP = 3;
+    int moduleID;
+    float coastKP = 4;
     float coastKI = 0.15;
     float coasteI = 0;
     float currentAngle;
@@ -337,9 +467,9 @@ Motor motor[6] = {
 };
 
 Module module[3] = {
-  Module(motor[0], motor[1]),
-  Module(motor[2], motor[3]),
-  Module(motor[4], motor[5])
+  Module(motor[0], motor[1], 0),
+  Module(motor[2], motor[3], 1),
+  Module(motor[4], motor[5], 2)
 };
 
 // This callback gets called any time a new gamepad is connected.
@@ -409,14 +539,40 @@ void processGamepad(ControllerPtr ctl) {
     // By query each button individually:
     //  a(), b(), x(), y(), l1(), etc...
 
-    int steeringSpeed = 225;
-    int PWMtestingSpeed = 100;
-    int prevDpadResult = 0;
-    if(abs(ctl->axisY()) > 50 && abs(ctl->axisX()) > 50){
+    int steeringSpeed = 255;
+    if(ctl->buttons() == 0x08 || ctl->buttons() == 0x04 || ctl->buttons() == 0x02){
+      if(ctl->axisX() > 500){
+        int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
+        module[moduleID].turn(steeringSpeed, 1);
+        module[moduleID].updateAngle();
+        Serial.println(module[moduleID].getAngle());
+      }else if(ctl->axisX() < -500){
+        int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
+        module[moduleID].turn(steeringSpeed, -1);
+        module[moduleID].updateAngle();
+        Serial.println(module[moduleID].getAngle());
+      }else if(ctl->axisY() > 500){
+        int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
+        module[moduleID].coast(240, 1);
+        module[moduleID].updateAngle();
+        Serial.println(module[moduleID].getAngle());
+      }else if(ctl->axisY() < -500){
+        int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
+        module[moduleID].coast(240, -1);
+        module[moduleID].updateAngle();
+        Serial.println(module[moduleID].getAngle());
+      }else{
+        for(int i = 0; i < 3; i++){
+          module[i].stop();
+        }
+      }
+    }else if(abs(ctl->axisY()) > 50 && abs(ctl->axisX()) > 50){
       int x = -1 * ctl->axisX();
       int y = -1 * ctl->axisY();
 
       float angle = atan2f(x, y) * 180.0f / M_PI;
+
+      angle = roundf(angle / 22.5) * 22.5;
 
       module[0].setAndUpdateAngle(angle);
       module[1].setAndUpdateAngle(angle);
@@ -431,32 +587,6 @@ void processGamepad(ControllerPtr ctl) {
       Serial.print(" | M3 angle: ");
       Serial.println(module[2].getAngle());
 
-    }else if(ctl->buttons() == 0x08 || ctl->buttons() == 0x04 || ctl->buttons() == 0x02){
-      if(ctl->axisX() > 500){
-        int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        module[moduleID].turn(steeringSpeed, 1);
-        module[moduleID].updateAngle();
-        Serial.println(module[moduleID].getAngle());
-      }else if(ctl->axisX() < -500){
-        int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        module[moduleID].turn(steeringSpeed, -1);
-        module[moduleID].updateAngle();
-        Serial.println(module[moduleID].getAngle());
-      }else if(ctl->axisY() > 500){
-        int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        module[moduleID].driveRaw(255, 1);
-        module[moduleID].updateAngle();
-        Serial.println(module[moduleID].getAngle());
-      }else if(ctl->axisY() < -500){
-        int moduleID = BUTTON_PRESS_TO_MODULE_ID(ctl->buttons());
-        module[moduleID].driveRaw(255, -1);
-        module[moduleID].updateAngle();
-        Serial.println(module[moduleID].getAngle());
-      }else{
-        for(int i = 0; i < 3; i++){
-          module[i].stop();
-        }
-      }
     }else if(ctl->buttons() == 0x01){
       module[0].resetAngle();
       module[1].resetAngle();
@@ -465,20 +595,35 @@ void processGamepad(ControllerPtr ctl) {
     }else if(ctl->buttons() == 0x10){
       int dpadResult = ctl->dpad();
       if(prevDpadResult != dpadResult && dpadResult != 0){
-        PWMtestingSpeed += DPAD_TO_PWM_TEST_VALUE_INC(dpadResult);
+        PWMtestingSpeed = PWMtestingSpeed + DPAD_TO_PWM_TEST_VALUE_INC(dpadResult);
       }
       prevDpadResult = dpadResult;
+
+      Serial.println(PWMtestingSpeed);
       
     }else if(ctl->buttons() == 0x20){
-      module[0].turn(PWMtestingSpeed);
-      module[1].turn(PWMtestingSpeed);
-      module[2].turn(PWMtestingSpeed);
+      module[0].turn(PWMtestingSpeed, 1);
+      module[1].turn(PWMtestingSpeed, 1);
+      module[2].turn(PWMtestingSpeed, 1);
+      module[0].UpdateSpeed();
+      module[1].UpdateSpeed();
+      module[2].UpdateSpeed();
+      // Serial.print("Module 0: ");
+      // module[0].displayMotorSpeed();
+      // Serial.print(" | ");
+      // Serial.print("Module 1: ");
+      // module[1].displayMotorSpeed();
+      // Serial.print(" | ");
+      // Serial.print("Module 1: ");
+      // module[2].displayMotorSpeed();
+      // Serial.print(" | ");
+      Serial.println(PWMtestingSpeed);
     }else if(ctl->dpad() != 0){
       int dpad = ctl->dpad();
       int targetAngle =   dpad == 0x01 ? 0 :
-                          dpad == 0x02 ? 90 :
-                          dpad == 0x04 ? 180 :
-                          dpad == 0x08 ? -90 : -1;
+                          dpad == 0x02 ? 180 :
+                          dpad == 0x04 ? 90 :
+                          dpad == 0x08 ? -90 : 0;
 
       module[0].setAndUpdateAngle(targetAngle);
       module[1].setAndUpdateAngle(targetAngle);
